@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import numpy as np
 import config
@@ -9,6 +10,23 @@ from pipeline.windows    import build_unsafe_zones, build_safe_windows
 from pipeline.video      import get_scene_boundaries, score_motion_at
 from pipeline.music      import preload_audio, score_music_at_preloaded
 from pipeline.semantics  import load_clip_model, precompute_text_features, score_clip_neutrality
+
+
+def _cache_path(work_dir: str, name: str) -> str:
+    return os.path.join(work_dir, f".cache_{name}.json")
+
+
+def _load_cache(work_dir: str, name: str):
+    path = _cache_path(work_dir, name)
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+
+def _save_cache(work_dir: str, name: str, data) -> None:
+    with open(_cache_path(work_dir, name), "w") as f:
+        json.dump(data, f)
 
 
 def _fmt_ts(seconds: float) -> str:
@@ -170,42 +188,49 @@ def find_best_cuts(video_path: str, work_dir: str) -> list[dict]:
 
     _step(6, TOTAL, "Preloading no_vocals stem and scoring candidates…")
     t = time.time()
-    nv_y, nv_sr = preload_audio(stems["no_vocals"])
 
-    candidates = _sample_candidates(windows)
-    workers    = min(os.cpu_count() or 4, len(candidates))
-    print(f"       {len(candidates)} candidates across {len(windows)} windows")
-    print(f"       parallelising across {workers} threads…")
+    candidates   = _sample_candidates(windows)
+    cache_name   = f"scored_ws{config.WINDOW_SAMPLES}"
+    scored       = _load_cache(work_dir, cache_name)
 
-    scored  = []
-    done_n  = 0
-    futures = {}
+    if scored is not None:
+        print(f"       loaded {len(scored)} scored candidates from cache (.cache_{cache_name}.json)")
+    else:
+        nv_y, nv_sr = preload_audio(stems["no_vocals"])
+        workers     = min(os.cpu_count() or 4, len(candidates))
+        print(f"       {len(candidates)} candidates across {len(windows)} windows")
+        print(f"       parallelising across {workers} threads…")
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for ts in candidates:
-            f = pool.submit(
-                _score_one,
-                ts, windows, boundaries,
-                nv_y, nv_sr, video_path,
-                clip_model, clip_preprocess,
-                neutral_feats, active_feats,
-                fps,
-            )
-            futures[f] = ts
+        scored  = []
+        done_n  = 0
+        futures = {}
 
-        for f in as_completed(futures):
-            result  = f.result()
-            done_n += 1
-            scored.append(result)
-            print(
-                f"       [{done_n:>3}/{len(candidates)}] "
-                f"{_fmt_ts(result['timestamp'])}  "
-                f"frame={result['frame']}  "
-                f"score={result['score']}",
-                flush=True,
-            )
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for ts in candidates:
+                f = pool.submit(
+                    _score_one,
+                    ts, windows, boundaries,
+                    nv_y, nv_sr, video_path,
+                    clip_model, clip_preprocess,
+                    neutral_feats, active_feats,
+                    fps,
+                )
+                futures[f] = ts
 
-    _done(time.time() - t)
+            for f in as_completed(futures):
+                result  = f.result()
+                done_n += 1
+                scored.append(result)
+                print(
+                    f"       [{done_n:>3}/{len(candidates)}] "
+                    f"{_fmt_ts(result['timestamp'])}  "
+                    f"frame={result['frame']}  "
+                    f"score={result['score']}",
+                    flush=True,
+                )
+
+        _save_cache(work_dir, cache_name, scored)
+        _done(time.time() - t)
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
