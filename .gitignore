@@ -1,0 +1,29 @@
+# Virtual environment
+.venv/
+
+# Pipeline work directory (large audio/video files)
+cut_analysis/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Sample/test videos (large binaries)
+*.mp4
+*.mkv
+*.avi
+*.mov
+
+# Claude settings
+.claude/

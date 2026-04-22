@@ -1,0 +1,15 @@
+faster-whisper
+silero-vad
+demucs
+librosa
+soundfile
+open-clip-torch
+scenedetect[opencv]
+opencv-python-headless
+ffmpeg-python
+numpy
+scipy
+torch
+torchaudio
+tqdm
+Pillow
