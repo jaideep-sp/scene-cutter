@@ -15,3 +15,5 @@ torch
 torchaudio
 tqdm
 Pillow
+psutil
+torchcodec

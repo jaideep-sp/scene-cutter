@@ -5,22 +5,26 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
+import psutil
 import streamlit as st
 
 st.set_page_config(page_title="Scene Cutter", layout="wide", page_icon="🎬")
 
 # ── session-state defaults ────────────────────────────────────────────────────
 _DEFAULTS = {
-    "logs":       [],
-    "cuts":       [],
-    "running":    False,
-    "done":       False,
-    "work_dir":   "",
-    "video_path": "",
-    "exit_code":  None,
+    "logs":          [],
+    "cuts":          [],
+    "cpu_history":   [],
+    "selected_clip": None,
+    "running":       False,
+    "done":          False,
+    "work_dir":      "",
+    "video_path":    "",
+    "exit_code":     None,
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
@@ -149,13 +153,14 @@ with st.sidebar:
 if run_btn and video_input:
     abs_work = os.path.abspath(work_input)
     st.session_state.update({
-        "video_path": video_input,
-        "work_dir":   abs_work,
-        "logs":       [],
-        "cuts":       [],
-        "running":    True,
-        "done":       False,
-        "exit_code":  None,
+        "video_path":  video_input,
+        "work_dir":    abs_work,
+        "logs":        [],
+        "cuts":        [],
+        "cpu_history": [],
+        "running":     True,
+        "done":        False,
+        "exit_code":   None,
     })
 
     cmd = [PYTHON, "main.py", video_input, "--out", abs_work]
@@ -167,6 +172,9 @@ if run_btn and video_input:
         cmd.append("--split")
 
     st.info(f"Running: `{' '.join(cmd)}`")
+    
+    # Placeholders for live updates
+    cpu_placeholder = st.empty()
     log_placeholder = st.empty()
 
     proc = subprocess.Popen(
@@ -176,11 +184,35 @@ if run_btn and video_input:
         text=True,
         cwd=str(Path(__file__).parent),
     )
-    for raw in proc.stdout:
-        st.session_state.logs.append(raw.rstrip())
-        log_placeholder.code(
-            "\n".join(st.session_state.logs[-80:]), language=None
-        )
+    
+    # Set to non-blocking read
+    import fcntl
+    fd = proc.stdout.fileno()
+    fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+    while proc.poll() is None:
+        # 1. Update CPU
+        cpu = psutil.cpu_percent(interval=None)
+        st.session_state.cpu_history.append(cpu)
+        if len(st.session_state.cpu_history) > 120: # keep 2 mins
+            st.session_state.cpu_history.pop(0)
+        
+        with cpu_placeholder.container():
+            st.caption(f"Live CPU Usage: {cpu}%")
+            st.area_chart(st.session_state.cpu_history, height=150)
+
+        # 2. Update Logs
+        try:
+            line = proc.stdout.readline()
+            if line:
+                st.session_state.logs.append(line.rstrip())
+                log_placeholder.code("\n".join(st.session_state.logs[-40:]), language=None)
+        except BlockingIOError:
+            pass
+            
+        time.sleep(0.1)
+
     proc.wait()
 
     st.session_state.running   = False
@@ -239,6 +271,7 @@ with tab_pipe:
             "\n".join(logs),
             file_name="pipeline.log",
             mime="text/plain",
+            key="dl_log"
         )
     else:
         st.info("Run the pipeline to see live logs here.")
@@ -297,7 +330,7 @@ with tab_cuts:
     cp = _csv_path()
     if os.path.exists(cp):
         with open(cp, "rb") as f:
-            st.download_button("⬇ Download CSV", f, file_name="cut_points.csv", mime="text/csv")
+            st.download_button("⬇ Download CSV", f, file_name="cut_points.csv", mime="text/csv", key="dl_csv_tab2")
 
     # ── frame previews ────────────────────────────────────────────────────────
     st.markdown("---")
@@ -343,17 +376,35 @@ with tab_clips:
     st.markdown(f"### {len(clips)} clip(s) in `{clips_dir}`")
 
     # ── clip player ───────────────────────────────────────────────────────────
-    names    = [os.path.basename(c) for c in clips]
-    selected = st.selectbox("Select clip to play", names, index=0)
-    if selected:
-        clip_path = os.path.join(clips_dir, selected)
+    names = [os.path.basename(c) for c in clips]
+    
+    # Initialize or validate selection
+    if st.session_state.selected_clip not in names:
+        st.session_state.selected_clip = names[0]
+        
+    current_idx = names.index(st.session_state.selected_clip)
+    
+    selected = st.selectbox(
+        "Select clip to play", 
+        names, 
+        index=current_idx,
+        key="clip_selector_dropdown"
+    )
+    
+    # If dropdown changes, update state
+    if selected != st.session_state.selected_clip:
+        st.session_state.selected_clip = selected
+        st.rerun()
+
+    if st.session_state.selected_clip:
+        clip_path = os.path.join(clips_dir, st.session_state.selected_clip)
         size_mb   = os.path.getsize(clip_path) / 1e6
         dur       = _probe_duration(clip_path)
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Duration", _fmt(dur))
         c2.metric("File size", f"{size_mb:.1f} MB")
-        c3.metric("Clip #", names.index(selected) + 1)
+        c3.metric("Clip #", names.index(st.session_state.selected_clip) + 1)
 
         data = _read_video(clip_path)
         if data:
@@ -363,7 +414,7 @@ with tab_clips:
 
     # ── thumbnail gallery ─────────────────────────────────────────────────────
     st.markdown("---")
-    st.subheader("All clips")
+    st.subheader("All clips (Click 'Play' to watch)")
 
     thumb_dir = os.path.join(wd, "thumbnails")
     os.makedirs(thumb_dir, exist_ok=True)
@@ -382,13 +433,18 @@ with tab_clips:
             with col:
                 if os.path.exists(thumb):
                     st.image(thumb, use_container_width=True)
-                # parse timecode from filename: segment_001_00-03-22.mp4
+                
                 parts = name.replace(".mp4", "").split("_")
                 tc    = parts[-1].replace("-", ":") if len(parts) >= 3 else "?"
-                st.caption(
-                    f"**{parts[1] if len(parts) >= 2 else name}**  {tc}\n"
-                    f"{_fmt(dur)}  ·  {size_mb:.1f} MB"
-                )
+                label = f"**{parts[1] if len(parts) >= 2 else name}**  {tc}"
+                st.caption(f"{label}\n{_fmt(dur)}  ·  {size_mb:.1f} MB")
+                
+                # Highlight if currently selected
+                is_selected = (name == st.session_state.selected_clip)
+                btn_type = "primary" if is_selected else "secondary"
+                if st.button(f"▶ Play {parts[1] if len(parts) >= 2 else ''}", key=f"btn_{name}", type=btn_type, use_container_width=True):
+                    st.session_state.selected_clip = name
+                    st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 4 — JSON / CSV
@@ -413,6 +469,7 @@ with tab_json:
                     "⬇ Download JSON", f,
                     file_name="cut_points.json",
                     mime="application/json",
+                    key="dl_json"
                 )
 
     with col_right:
@@ -457,4 +514,5 @@ with tab_json:
                     "⬇ Download CSV", f,
                     file_name="cut_points.csv",
                     mime="text/csv",
+                    key="dl_csv_tab4"
                 )

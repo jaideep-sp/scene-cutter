@@ -124,13 +124,15 @@ def split_video(video_path: str, cuts: list[dict], clips_dir: str) -> None:
     valid_cut_times = sorted(c["timestamp"] for c in cuts if c["timestamp"] < duration)
     timestamps = [0.0] + valid_cut_times + [duration]
 
-    print(f"\nSplitting into {len(timestamps) - 1} segment(s) → {clips_dir}")
+    print(f"\nSplitting into {len(timestamps) - 1} segment(s) → {clips_dir}", flush=True)
 
     for i in range(len(timestamps) - 1):
         t_start = timestamps[i]
         t_end   = timestamps[i + 1]
         tc      = fmt_timestamp(t_start).replace(":", "-")
         out     = os.path.join(clips_dir, f"segment_{i + 1:03d}_{tc}.mp4")
+
+        print(f"  [{i+1}/{len(timestamps)-1}] Splitting: {fmt_timestamp(t_start)} → {fmt_timestamp(t_end)}...", end=" ", flush=True)
 
         cmd = [
             "ffmpeg", "-y",
@@ -146,10 +148,9 @@ def split_video(video_path: str, cuts: list[dict], clips_dir: str) -> None:
         ]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         seg_dur = t_end - t_start
-        print(f"  segment {i + 1:03d}  {fmt_timestamp(t_start)} → {fmt_timestamp(t_end)}  "
-              f"({seg_dur:.1f}s)  → {os.path.basename(out)}")
+        print(f"done ({seg_dur:.1f}s)", flush=True)
 
-    print("Done splitting.")
+    print("Done splitting.", flush=True)
 
 
 def main() -> None:

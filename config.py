@@ -2,7 +2,7 @@ import torch
 
 SPEECH_BUFFER       = 2.0   # seconds of padding around detected speech
 MIN_SILENCE_GAP     = 1.5   # minimum silence window duration to consider
-MIN_CUT_SPACING     = 10.0  # minimum gap between two final selected cuts
+MIN_CUT_SPACING     = 5.0  # minimum gap between two final selected cuts
 WHISPER_CONFIDENCE  = 0.55  # ignore words below this probability (0-1)
 MOTION_THRESHOLD    = 2.5   # mean optical flow magnitude — above = too much action
 MUSIC_RMS_THRESHOLD = 0.09  # peak RMS on no_vocals stem — above = dramatic music
