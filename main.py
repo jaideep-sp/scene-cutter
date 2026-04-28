@@ -121,7 +121,8 @@ def split_video(video_path: str, cuts: list[dict], clips_dir: str) -> None:
     probe    = ffmpeg.probe(video_path)
     duration = float(probe["format"]["duration"])
 
-    timestamps = [0.0] + sorted(c["timestamp"] for c in cuts) + [duration]
+    valid_cut_times = sorted(c["timestamp"] for c in cuts if c["timestamp"] < duration)
+    timestamps = [0.0] + valid_cut_times + [duration]
 
     print(f"\nSplitting into {len(timestamps) - 1} segment(s) → {clips_dir}")
 

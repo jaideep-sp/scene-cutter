@@ -1,3 +1,5 @@
+streamlit
+pandas
 faster-whisper
 silero-vad
 demucs
