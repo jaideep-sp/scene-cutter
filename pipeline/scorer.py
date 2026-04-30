@@ -132,12 +132,8 @@ def _sample_candidates(safe_windows: list[dict]) -> list[float]:
 
 
 def _video_cache_key(video_path: str) -> str:
-    """First 8 chars of the SHA-256 of the first 4 MB — short, stable ID for this file."""
-    import hashlib
-    h = hashlib.sha256()
-    with open(video_path, "rb") as f:
-        h.update(f.read(4 * 1024 * 1024))
-    return h.hexdigest()[:8]
+    from pipeline.utils import video_fingerprint
+    return video_fingerprint(video_path)[:8]
 
 
 def find_best_cuts(video_path: str, work_dir: str) -> list[dict]:

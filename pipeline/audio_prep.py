@@ -1,10 +1,11 @@
 import subprocess
 import glob
-import hashlib
 import json
 import os
 import sys
 from pathlib import Path
+
+from pipeline.utils import video_fingerprint
 
 
 def extract_audio(video_path: str, work_dir: str) -> str:
@@ -21,21 +22,13 @@ def extract_audio(video_path: str, work_dir: str) -> str:
     return raw_wav
 
 
-def _video_fingerprint(video_path: str) -> str:
-    """SHA-256 of the first 4 MB of the video file — fast, stable identity check."""
-    h = hashlib.sha256()
-    with open(video_path, "rb") as f:
-        h.update(f.read(4 * 1024 * 1024))
-    return h.hexdigest()
-
-
 def separate_stems(raw_wav: str, work_dir: str, video_path: str = "") -> dict:
     """Run demucs two-stem separation (vocals / no_vocals) on the WAV file."""
     stem_meta = os.path.join(work_dir, ".stem_source.json")
     vocals_matches    = glob.glob(os.path.join(work_dir, "**", "vocals.wav"),    recursive=True)
     no_vocals_matches = glob.glob(os.path.join(work_dir, "**", "no_vocals.wav"), recursive=True)
 
-    current_fp = _video_fingerprint(video_path) if video_path else ""
+    current_fp = video_fingerprint(video_path) if video_path else ""
 
     stems_valid = False
     if vocals_matches and no_vocals_matches and os.path.exists(stem_meta):
