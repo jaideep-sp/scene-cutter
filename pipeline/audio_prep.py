@@ -5,6 +5,14 @@ import os
 import sys
 from pathlib import Path
 
+# Fix for Python 3.14 / torchaudio compatibility
+try:
+    import torchaudio
+    if "soundfile" in torchaudio.list_audio_backends():
+        torchaudio.set_audio_backend("soundfile")
+except Exception:
+    pass
+
 from pipeline.utils import video_fingerprint
 
 

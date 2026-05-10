@@ -139,13 +139,19 @@ with st.sidebar:
     if st.sidebar.button("↩ Load existing results", use_container_width=True):
         wd = os.path.abspath(work_input)
         st.session_state.work_dir   = wd
-        st.session_state.video_path = video_input
         jp = os.path.join(wd, "cut_points.json")
         if os.path.exists(jp):
             with open(jp) as f:
-                st.session_state.cuts = json.load(f)
+                data = json.load(f)
+                if isinstance(data, dict):
+                    st.session_state.cuts = data.get("cut_points", [])
+                    if data.get("video"):
+                        st.session_state.video_path = data.get("video")
+                else:
+                    st.session_state.cuts = data
             st.session_state.done = True
             st.session_state.exit_code = 0
+            st.rerun()
         else:
             st.warning("No cut_points.json found in that directory.")
 
