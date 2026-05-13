@@ -368,18 +368,21 @@ with tab_cuts:
                     )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB 3 — Clips
+# TAB 3 — Clips / Snippets
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_clips:
-    wd        = st.session_state.work_dir
-    clips_dir = os.path.join(wd, "clips") if wd else ""
+    wd = st.session_state.work_dir
+    
+    # Allow toggling between Full Clips and Review Snippets
+    subfolder = st.radio("View folder:", ["clips", "snippets"], horizontal=True)
+    clips_dir = os.path.join(wd, subfolder) if wd else ""
     clips     = _load_clips(clips_dir) if clips_dir else []
 
     if not clips:
-        st.info("No clips found. Run with 'Split into clips' enabled.")
+        st.info(f"No files found in `{subfolder}/`. Run the pipeline with `--{subfolder}` enabled.")
         st.stop()
 
-    st.markdown(f"### {len(clips)} clip(s) in `{clips_dir}`")
+    st.markdown(f"### {len(clips)} {subfolder} in `{clips_dir}`")
 
     # ── clip player ───────────────────────────────────────────────────────────
     names = [os.path.basename(c) for c in clips]
@@ -404,19 +407,23 @@ with tab_clips:
 
     if st.session_state.selected_clip:
         clip_path = os.path.join(clips_dir, st.session_state.selected_clip)
-        size_mb   = os.path.getsize(clip_path) / 1e6
-        dur       = _probe_duration(clip_path)
+        if os.path.exists(clip_path):
+            size_mb   = os.path.getsize(clip_path) / 1e6
+            dur       = _probe_duration(clip_path)
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Duration", _fmt(dur))
-        c2.metric("File size", f"{size_mb:.1f} MB")
-        c3.metric("Clip #", names.index(st.session_state.selected_clip) + 1)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Duration", _fmt(dur))
+            c2.metric("File size", f"{size_mb:.1f} MB")
+            c3.metric("Clip #", names.index(st.session_state.selected_clip) + 1)
 
-        data = _read_video(clip_path)
-        if data:
-            st.video(data)
+            # Use a file handle instead of reading all bytes into memory
+            # This allows the browser to 'stream' the video
+            with open(clip_path, "rb") as video_file:
+                st.video(video_file, format="video/mp4")
+            
+            st.caption(f"Playing: `{st.session_state.selected_clip}`")
         else:
-            st.warning(f"Clip is {size_mb:.0f} MB — too large to embed. Open directly:\n`{clip_path}`")
+            st.error(f"Clip not found: {clip_path}")
 
     # ── thumbnail gallery ─────────────────────────────────────────────────────
     st.markdown("---")

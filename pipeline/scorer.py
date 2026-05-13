@@ -94,11 +94,16 @@ def _score_one(
     score -= min(motion, 4.375)      * 8
     if music["peak_rms"] > config.MUSIC_RMS_THRESHOLD:
         score -= music["peak_rms"]   * 25
+    
+    # New: Penalize sharp percussive hits (stings) even if overall volume is low
+    if music["percussive_rms"] > 0.05:
+        score -= music["percussive_rms"] * 20
+
     if music["beat_strength"] > config.BEAT_STRENGTH_CAP:
         score -= music["beat_strength"] * 3
     score += clip_neutrality         * 15
     if near_boundary:
-        score += 10.0
+        score += 25.0  # Increased from 10.0 to prioritize camera cuts
 
     return {
         "timestamp": timestamp,
@@ -118,17 +123,30 @@ def _score_one(
     }
 
 
-def _sample_candidates(safe_windows: list[dict]) -> list[float]:
+def _sample_candidates(safe_windows: list[dict], scene_boundaries: list[float]) -> list[float]:
+    """
+    Combines even-spaced samples with detected scene boundaries for high precision.
+    Ensures that if a natural camera cut happens inside a safe window, we check it exactly.
+    """
     candidates = []
     n = config.WINDOW_SAMPLES
+
     for w in safe_windows:
+        # 1. Add even-spaced 'exploratory' samples
         if n == 1:
             candidates.append(w["center"])
         else:
             step = w["duration"] / (n + 1)
             for i in range(1, n + 1):
                 candidates.append(w["start"] + step * i)
-    return candidates
+
+        # 2. Add 'Smart' samples: every scene boundary that falls in this window
+        for b in scene_boundaries:
+            if w["start"] <= b <= w["end"]:
+                candidates.append(b)
+
+    # Remove duplicates and sort chronologically
+    return sorted(list(set(candidates)))
 
 
 def _video_cache_key(video_path: str) -> str:
@@ -165,7 +183,7 @@ def find_best_cuts(video_path: str, work_dir: str) -> list[dict]:
 
     _step(3, TOTAL, "Building safe windows…")
     t = time.time()
-    unsafe  = build_unsafe_zones([], vad_segs, duration)
+    unsafe  = build_unsafe_zones( vad_segs, duration)
     windows = build_safe_windows(unsafe, duration)
     _done(time.time() - t)
     print(f"       unsafe zones : {len(unsafe)}")
@@ -194,7 +212,7 @@ def find_best_cuts(video_path: str, work_dir: str) -> list[dict]:
     _step(6, TOTAL, "Preloading no_vocals stem and scoring candidates…")
     t = time.time()
 
-    candidates   = _sample_candidates(windows)
+    candidates   = _sample_candidates(windows, boundaries)
     vid_key      = _video_cache_key(video_path)
     cache_name   = f"scored_{vid_key}_ws{config.WINDOW_SAMPLES}"
     scored       = _load_cache(work_dir, cache_name)

@@ -16,7 +16,7 @@ def _merge_intervals(intervals: list[tuple]) -> list[tuple]:
 
 
 def build_unsafe_zones(
-    whisper_segs: list[dict],
+    # whisper_segs: list[dict],
     vad_segs: list[dict],
     duration: float,
 ) -> list[tuple]:
@@ -24,11 +24,11 @@ def build_unsafe_zones(
     buf = config.SPEECH_BUFFER
     raw = []
 
-    for seg in whisper_segs:
-        raw.append((
-            max(0.0, seg["start"] - buf),
-            min(duration, seg["end"]   + buf),
-        ))
+    # for seg in whisper_segs:
+    #     raw.append((
+    #         max(0.0, seg["start"] - buf),
+    #         min(duration, seg["end"]   + buf),
+    #     ))
 
     for seg in vad_segs:
         raw.append((

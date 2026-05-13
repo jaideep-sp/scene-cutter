@@ -2,33 +2,33 @@ import torch
 import config
 
 
-def get_speech_segments(vocals_path: str) -> list[dict]:
-    """Pass 1: faster-whisper word-level transcription on vocals stem."""
-    from faster_whisper import WhisperModel
+# def get_speech_segments(vocals_path: str) -> list[dict]:
+#     """Pass 1: faster-whisper word-level transcription on vocals stem."""
+#     from faster_whisper import WhisperModel
 
-    compute_type = "float16" if config.DEVICE == "cuda" else "int8"
-    model = WhisperModel("medium", device=config.DEVICE, compute_type=compute_type)
+#     compute_type = "float16" if config.DEVICE == "cuda" else "int8"
+#     model = WhisperModel("medium", device=config.DEVICE, compute_type=compute_type)
 
-    segments, _ = model.transcribe(
-        vocals_path,
-        word_timestamps=True,
-        vad_filter=True,
-    )
+#     segments, _ = model.transcribe(
+#         vocals_path,
+#         word_timestamps=True,
+#         vad_filter=True,
+#     )
 
-    results = []
-    for segment in segments:
-        if segment.words is None:
-            continue
-        for word in segment.words:
-            if word.probability >= config.WHISPER_CONFIDENCE:
-                results.append({
-                    "start": word.start,
-                    "end": word.end,
-                    "text": word.word,
-                    "prob": word.probability,
-                })
+#     results = []
+#     for segment in segments:
+#         if segment.words is None:
+#             continue
+#         for word in segment.words:
+#             if word.probability >= config.WHISPER_CONFIDENCE:
+#                 results.append({
+#                     "start": word.start,
+#                     "end": word.end,
+#                     "text": word.word,
+#                     "prob": word.probability,
+#                 })
 
-    return results
+#     return results
 
 
 def get_vad_segments(vocals_path: str) -> list[dict]:

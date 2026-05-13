@@ -153,6 +153,52 @@ def split_video(video_path: str, cuts: list[dict], clips_dir: str) -> None:
     print("Done splitting.", flush=True)
 
 
+def create_snippets(video_path: str, cuts: list[dict], snippets_dir: str) -> None:
+    """Create short 5-second preview clips for each cut point with a red border highlight."""
+    os.makedirs(snippets_dir, exist_ok=True)
+    import ffmpeg
+    probe = ffmpeg.probe(video_path)
+    fps = float(next(
+        s["r_frame_rate"].split("/")[0] for s in probe["streams"] if s["codec_type"] == "video"
+    ))
+
+    print(f"\nGenerating {len(cuts)} snippets (5s context) → {snippets_dir}", flush=True)
+
+    for i, cut in enumerate(cuts, 1):
+        target_time = cut["timestamp"]
+        start_time = max(0.0, target_time - 4.0)  # 4 seconds before
+        end_time = target_time + 1.0              # 1 second after
+        duration = end_time - start_time
+        
+        tc = fmt_timestamp(target_time).replace(":", "-")
+        out = os.path.join(snippets_dir, f"snippet_{i:03d}_{tc}_score_{int(cut['score'])}.mp4")
+
+        # Red border highlight logic from extract_frame_context.py
+        # Highlights 0.4s around the target_time
+        rel_target = target_time - start_time
+        box_filter = (
+            f"drawbox=x=0:y=0:w=iw:h=ih:color=red@0.8:thickness=20:"
+            f"enable='between(t,{rel_target - 0.2},{rel_target + 0.2})'"
+        )
+
+        print(f"  [{i}/{len(cuts)}] Snippet at {fmt_timestamp(target_time)} (score {cut['score']})...", end=" ", flush=True)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start_time),
+            "-t", str(duration),
+            "-i", video_path,
+            "-vf", box_filter,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-c:a", "aac",
+            out
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("done", flush=True)
+
+    print("Done generating snippets.", flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Find safe cut points in an MP4 (no speech, action, or dramatic music)."
@@ -181,8 +227,12 @@ def main() -> None:
     parser.add_argument(
         "--split",
         action="store_true",
-        help="Split the input video at each cut point using ffmpeg (stream-copy, no re-encode). "
-             "Segments saved to <out>/clips/",
+        help="Split the full video into segments at each cut point.",
+    )
+    parser.add_argument(
+        "--snippets",
+        action="store_true",
+        help="Create short 5s context clips for each cut point (for review).",
     )
     args = parser.parse_args()
 
@@ -226,6 +276,10 @@ def main() -> None:
     if args.split:
         clips_dir = os.path.join(work_dir, "clips")
         split_video(args.input, cuts, clips_dir)
+        
+    if args.snippets:
+        snippets_dir = os.path.join(work_dir, "snippets")
+        create_snippets(args.input, cuts, snippets_dir)
 
 
 if __name__ == "__main__":

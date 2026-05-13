@@ -1,14 +1,14 @@
 import torch
 
-SPEECH_BUFFER       = 2.0   # seconds of padding around detected speech
-MIN_SILENCE_GAP     = 1.5   # minimum silence window duration to consider
-MIN_CUT_SPACING     = 5.0  # minimum gap between two final selected cuts
-WHISPER_CONFIDENCE  = 0.55  # ignore words below this probability (0-1)
-MOTION_THRESHOLD    = 2.5   # mean optical flow magnitude — above = too much action
-MUSIC_RMS_THRESHOLD = 0.09  # peak RMS on no_vocals stem — above = dramatic music
-BEAT_STRENGTH_CAP   = 1.5   # onset strength — above = musical accent, avoid
-N_CUTS              = 0     # 0 = return all valid cuts; any positive int caps the result
-WINDOW_SAMPLES      = 3     # candidate points sampled per silence window
+SPEECH_BUFFER       = 1.2   # reduced from 2.0 to find more gaps
+MIN_SILENCE_GAP     = 1.0   # reduced from 1.5
+MIN_CUT_SPACING     = 3.0   # allow more frequent cuts (was 5.0)
+WHISPER_CONFIDENCE  = 0.55
+MOTION_THRESHOLD    = 2.5
+MUSIC_RMS_THRESHOLD = 0.09
+BEAT_STRENGTH_CAP   = 1.5
+N_CUTS              = 0
+WINDOW_SAMPLES      = 6     # increased from 3 for better resolution
 DEVICE              = "cuda" if torch.cuda.is_available() else "cpu"
 
 PROFILES = {

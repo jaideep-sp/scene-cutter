@@ -4,29 +4,44 @@ import torch
 import torch.nn.functional as F
 
 NEUTRAL_PROMPTS = [
-    "a quiet empty room",
-    "a calm outdoor scene with no people",
-    "a neutral establishing shot",
-    "black screen transition",
+    "an empty room with no people",
+    "a wide shot of a building or house exterior",
+    "a quiet landscape or scenery with no movement",
+    "an empty street or park",
+    "a close-up of a still object like a vase, clock, or furniture",
+    "a static shot of a decorative item",
+    "a blurry out-of-focus background or bokeh",
+    "a black screen or very dark transition",
+    "a neutral wall or ceiling",
+    "a simple texture with no movement",
 ]
 
 ACTIVE_PROMPTS = [
-    "person talking intensely",
-    "action scene with fast movement",
-    "emotional dialogue between characters",
-    "person crying or shouting",
+    "a person speaking with their mouth open",
+    "two people looking at each other intensely",
+    "a person gesturing with their hands or pointing",
+    "a group of people interacting or talking",
+    "a close-up of a face showing strong emotion like crying, anger, or shock",
+    "a person with a focused or intense expression",
+    "a dramatic reaction shot of a character",
+    "text on screen, subtitles, or a logo",
+    "a news lower-third or graphic overlay",
+    "opening or closing credits",
+    "a person walking towards the camera",
+    "fast movement or an action sequence",
 ]
 
 
 def load_clip_model(device: str):
-    """Load OpenCLIP ViT-H-14 once and return (model, preprocess, tokenizer)."""
+    """Load OpenCLIP ViT-L-14 (DataComp-1B) once and return (model, preprocess, tokenizer)."""
     import open_clip
+    # ViT-L-14 with DataComp-1B is more accurate and smaller/faster than ViT-H-14
     model, _, preprocess = open_clip.create_model_and_transforms(
-        "ViT-H-14",
-        pretrained="laion2b_s32b_b79k",
+        "ViT-L-14",
+        pretrained="datacomp_xl_s13b_b90k",
         device=device,
     )
-    tokenizer = open_clip.get_tokenizer("ViT-H-14")
+    tokenizer = open_clip.get_tokenizer("ViT-L-14")
     model.eval()
     return model, preprocess, tokenizer
 
@@ -52,29 +67,55 @@ def score_clip_neutrality(
     device: str,
 ) -> float:
     """
-    Return cosine_similarity(frame, neutral_prompts).mean()
-         - cosine_similarity(frame, active_prompts).mean()
-
-    Positive → frame looks neutral/safe. Negative → frame looks active/dramatic.
+    Samples 5 frames in a ±0.5s window around the timestamp.
+    Processes all 5 frames in a SINGLE batch for maximum speed.
+    Returns the MINIMUM neutrality score (pessimistic approach).
     """
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(timestamp * fps))
-    ret, frame = cap.read()
+
+    # Sample 5 points: -0.5s, -0.25s, 0.0s, +0.25s, +0.5s
+    offsets = [-0.5, -0.25, 0.0, 0.25, 0.5]
+    
+    from PIL import Image
+    
+    preprocessed_images = []
+    
+    for offset in offsets:
+        t = max(0.0, timestamp + offset)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        
+        # Convert BGR (OpenCV) to RGB (PIL)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(rgb_frame)
+        
+        # Preprocess and store
+        preprocessed_images.append(preprocess(pil_image))
+
     cap.release()
 
-    if not ret:
+    if not preprocessed_images:
         return 0.0
 
-    from PIL import Image
-    pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    # 1. Batch all images into a single 4D tensor [N, C, H, W]
+    image_batch = torch.stack(preprocessed_images).to(device)
 
-    image_tensor = preprocess(pil_image).unsqueeze(0).to(device)
+    # 2. Single pass through the model
     with torch.no_grad():
-        image_feat = model.encode_image(image_tensor)
-    image_feat = F.normalize(image_feat, dim=-1)
+        image_feats = model.encode_image(image_batch)
+    
+    # Normalize features
+    image_feats = F.normalize(image_feats, dim=-1)
 
-    neutral_sim = (image_feat @ neutral_feats.T).mean().item()
-    active_sim  = (image_feat @ active_feats.T).mean().item()
+    # 3. Calculate scores for each frame in the batch
+    # (image_feats @ neutral_feats.T) gives a [5, N_PROMPTS] matrix
+    neutral_sims = (image_feats @ neutral_feats.T).mean(dim=-1)
+    active_sims  = (image_feats @ active_feats.T).mean(dim=-1)
+    
+    scores = (neutral_sims - active_sims).cpu().numpy()
 
-    return neutral_sim - active_sim
+    # Return the minimum score (if any frame is active, the neutrality is low)
+    return float(np.min(scores))

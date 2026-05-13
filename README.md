@@ -24,6 +24,23 @@ python main.py input.mp4 --n-cuts 10 --profile drama --split
 
 ---
 
+## Visual Dashboard (Streamlit)
+
+Scene Cutter includes a web-based dashboard for real-time monitoring, cut-point inspection, and playing generated clips.
+
+```bash
+# Start the dashboard
+streamlit run dashboard.py
+```
+
+**Features:**
+- **Live Monitor:** Watch the pipeline phases and CPU usage in real-time.
+- **Inspector:** Browse every cut point with auto-generated frame thumbnails.
+- **Player:** Watch the split video segments directly in your browser.
+- **Exporter:** Download results as JSON or CSV.
+
+---
+
 ## Output Files
 
 | File | Description |
