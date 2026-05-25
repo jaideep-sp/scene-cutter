@@ -32,7 +32,7 @@ def run_cmd(cmd, desc):
         print("----------------------------------------\n")
     return result.returncode == 0
 
-def extract_frame_and_clips(video_path, frame_number, fps=None, output_dir="."):
+def extract_frame_and_clips(video_path, frame_number, fps=None, output_dir=".", prefix=""):
     if not os.path.exists(video_path):
         print(f"Error: Video file '{video_path}' not found.")
         sys.exit(1)
@@ -47,12 +47,14 @@ def extract_frame_and_clips(video_path, frame_number, fps=None, output_dir="."):
     print(f"Using FPS: {fps}")
     
     # Calculate exact time for the frame
-    # Adding a tiny offset (0.1/fps) ensures we don't land exactly on the frame boundary and accidentally get the previous frame
     target_time = frame_number / fps
     base_name = os.path.splitext(os.path.basename(video_path))[0]
     
+    # Add prefix if provided
+    name_stem = f"{prefix}_{base_name}" if prefix else base_name
+    
     # 1. Extract the exact frame as an image
-    out_image = os.path.join(output_dir, f"{base_name}_frame_{frame_number}.jpg")
+    out_image = os.path.join(output_dir, f"{name_stem}_frame_{frame_number}.jpg")
     cmd_image = [
         "ffmpeg", "-y", 
         "-ss", str(target_time), 
@@ -70,7 +72,7 @@ def extract_frame_and_clips(video_path, frame_number, fps=None, output_dir="."):
     # 5 seconds * fps = number of frames
     num_frames_5s = int((target_time - start_time_5s) * fps) + 1
     
-    out_clip_5s = os.path.join(output_dir, f"{base_name}_5s_ending_at_{frame_number}.mp4")
+    out_clip_5s = os.path.join(output_dir, f"{name_stem}_5s_ending_at_{frame_number}.mp4")
     cmd_clip_5s = [
         "ffmpeg", "-y", 
         "-ss", str(start_time_5s), 
@@ -90,7 +92,7 @@ def extract_frame_and_clips(video_path, frame_number, fps=None, output_dir="."):
     num_frames_ctx = int((target_time - start_time_ctx + context_duration_after) * fps) + 1
     relative_target_time = target_time - start_time_ctx
     
-    out_clip_ctx = os.path.join(output_dir, f"{base_name}_context_highlight_{frame_number}.mp4")
+    out_clip_ctx = os.path.join(output_dir, f"{name_stem}_context_highlight_{frame_number}.mp4")
     
     # Use drawbox to draw a thick red border around the target frame for 0.4 seconds
     # This avoids using drawtext which requires external fonts and libfreetype

@@ -41,6 +41,23 @@ streamlit run dashboard.py
 
 ---
 
+## Comparison Automation
+
+To evaluate accuracy against third-party tools (like Adobe Premiere Pro's Scene Edit Detection), use the comparison script. It groups pipeline results with nearby Adobe results and isolates missed frames for analysis.
+
+```bash
+# Automate frame/clip extraction for comparison
+python compare_cuts.py
+```
+
+**What it does:**
+- Matches Adobe's `clipitems_output.json` against our `cut_points.json` (+/- 50 frames).
+- Creates `comparison_results/` with organized group folders.
+- Extracts "OURS" vs "ADOBE" 5-second context clips for every match.
+- Places all Adobe-detected scene changes that we missed into a `missed_by_pipeline` folder.
+
+---
+
 ## Output Files
 
 | File | Description |
