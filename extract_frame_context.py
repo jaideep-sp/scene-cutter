@@ -69,8 +69,13 @@ def extract_frame_and_clips(video_path, frame_number, fps=None, output_dir=".", 
     start_time_5s = max(0, target_time - 5)
     
     # To guarantee the exact frame is included, we calculate exactly how many frames we need.
-    # 5 seconds * fps = number of frames
     num_frames_5s = int((target_time - start_time_5s) * fps) + 1
+    rel_target_5s = target_time - start_time_5s
+
+    box_filter_5s = (
+        f"drawbox=x=0:y=0:w=iw:h=ih:color=red@0.8:thickness=40:"
+        f"enable='between(t,{rel_target_5s - 0.2},{rel_target_5s + 0.2})'"
+    )
     
     out_clip_5s = os.path.join(output_dir, f"{name_stem}_5s_ending_at_{frame_number}.mp4")
     cmd_clip_5s = [
@@ -78,6 +83,7 @@ def extract_frame_and_clips(video_path, frame_number, fps=None, output_dir=".", 
         "-ss", str(start_time_5s), 
         "-i", video_path, 
         "-frames:v", str(num_frames_5s),
+        "-vf", box_filter_5s,
         "-c:v", "libx264", "-preset", "fast", "-crf", "22",
         "-c:a", "aac", 
         out_clip_5s
