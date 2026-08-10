@@ -75,7 +75,31 @@ python compare_cuts.py
 | `--out DIR` | `./cut_analysis` | Work directory for intermediates and output |
 | `--n-cuts INT` | `0` (all valid) | Cap number of cut points returned |
 | `--profile` | none | Preset: `drama`, `action`, `documentary`, `animation` |
+| `--strategy` | `visual_ai` | Operational strategy: `visual_only`, `visual_audio`, `visual_ai`, `legacy_audio_first` |
 | `--split` | off | Split video at cut points using ffmpeg stream-copy |
+| `--snippets` | off | Create short 5s context clips for each cut point |
+
+---
+
+## Processing Strategies
+
+Scene Cutter provides four operational strategies to balance speed and intelligence depending on your content and computing power:
+
+### 1. `visual_ai` (Smartest & Default)
+* **How it works:** Starts by finding all visual scene transitions (`PySceneDetect`), filters out cuts that happen mid-speech (`SileroVAD`), and then runs deep learning analysis on the remaining candidates. It uses `OpenCLIP` to assess visual neutrality, OpenCV optical flow to evaluate motion intensity, and `librosa` to analyze background music (RMS loudness and beat strength) on the non-vocal audio stem.
+* **Best for:** Broadcast TV shows, drama series, and complex content where cuts must look seamless and avoid dramatic audio or motion changes.
+
+### 2. `visual_audio` (Balanced & Safe)
+* **How it works:** Detects visual scene transitions (`PySceneDetect`) and runs vocal speech detection (`SileroVAD`). It filters out boundaries that land mid-dialogue (using a `0.4s` speech buffer), only returning scene cuts that occur during quiet/silent windows. It skips heavy visual and musical scoring.
+* **Best for:** Fast processing of talking-head videos, interviews, and vlogs where avoiding splitting mid-sentence is the primary requirement.
+
+### 3. `visual_only` (Fastest)
+* **How it works:** Performs visual scene detection (`PySceneDetect`) and immediately returns all visual boundaries. It completely skips audio extraction, separation, speech VAD, and CLIP scoring.
+* **Best for:** Silent films, videos without dialogue/music, or maximum-speed draft cuts.
+
+### 4. `legacy_audio_first` (Legacy)
+* **How it works:** The original Phase 1 heuristic. It scans the audio track first for silence windows and then samples cut points within those silence frames, matching them against visual indicators.
+* **Best for:** Backward compatibility with original pipeline outputs.
 
 ---
 
@@ -125,6 +149,97 @@ MP4
 - ffmpeg: `brew install ffmpeg` (macOS) or `apt install ffmpeg` (Linux)
 - ~4 GB RAM minimum; 8 GB+ recommended for ViT-H-14 CLIP model
 - GPU optional but significantly faster (see performance table in TECHNICAL.md)
+
+---
+
+## FastAPI Web API
+
+For integrations or programmatic job submissions, Scene Cutter includes a web-ready FastAPI server:
+
+```bash
+# Start the API server on http://localhost:8000
+python api.py
+```
+
+- **Interactive Docs (Swagger UI):** `http://localhost:8000/docs`
+- **Create Job:** `POST /jobs` (accepts local or `gs://` video paths)
+- **Check Status:** `GET /jobs/{job_id}`
+- **Fetch Live Logs:** `GET /jobs/{job_id}/logs`
+
+---
+
+## GCS Continuous Polling Watcher
+
+For automated pipeline workflows running inside a VM, use the **Continuous GCS Bucket Watcher** (`bucket_watcher.py`). This daemon polls a specified Google Cloud Storage bucket for unprocessed video folders, downloads and runs the Scene Cutter pipeline locally, uploads results directly to the *same* asset folder, and deletes local cache files to save disk space.
+
+### How GCS Processing Works:
+1. **Poll:** Scanner lists all objects in your bucket every N seconds (configurable).
+2. **Detect:** Groups files by folder directory. If a folder contains a video file (e.g., `gs://bucket/assets/ep48/video.mp4`) but has *no* `cut_points.json` or `cut_points.csv`, it is flagged for processing.
+3. **Download & Process:** Downloads the asset to a local workspace (`./jobs/`) and executes the high-speed pipeline.
+4. **Upload:** Uploads the output files back to the *same GCS folder* (e.g., `gs://bucket/assets/ep48/cut_points.json`).
+5. **Clean up:** Completely deletes the local video and outputs, ensuring your VM's storage doesn't run out.
+
+### Launching the Watcher:
+```bash
+# Set your target GCS bucket name
+export SCENE_CUTTER_BUCKET="my-gcs-input-bucket"
+
+# Run the polling daemon
+python bucket_watcher.py
+```
+
+---
+
+## Production VM Deployment (e.g., GCP `c2-standard-30`)
+
+To deploy this as a continuous background daemon on a GCP VM, use **Systemd** services and optimized CPU/thread allocations.
+
+### 1. Optimize Environment and CPU Threads (`/etc/default/scene-cutter-watcher`)
+Since high-performance machines (like GCP's 30-vCPU `c2-standard-30`) run on CPU, specify PyTorch/OpenBLAS thread environment variables to utilize all cores while avoiding system thread-locks:
+
+```ini
+# /etc/default/scene-cutter-watcher
+SCENE_CUTTER_BUCKET=my-gcs-input-bucket
+POLL_INTERVAL=30
+LOCAL_JOBS_DIR=/home/ubuntu/scene-cutter/jobs
+
+# CPU Core optimizations for PyTorch on a 30-core VM
+OMP_NUM_THREADS=28
+MKL_NUM_THREADS=28
+OPENBLAS_NUM_THREADS=28
+```
+
+### 2. Configure Systemd Service (`/etc/systemd/system/scene-cutter-watcher.service`)
+
+```ini
+[Unit]
+Description=Scene Cutter GCS Continuous Polling Watcher
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/scene-cutter
+EnvironmentFile=/etc/default/scene-cutter-watcher
+ExecStart=/home/ubuntu/scene-cutter/.venv/bin/python bucket_watcher.py
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=scene-cutter-watcher
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 3. Service Management
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable scene-cutter-watcher
+sudo systemctl start scene-cutter-watcher
+
+# Follow live pipeline execution and GCS polling logs
+sudo journalctl -u scene-cutter-watcher -f
+```
 
 ---
 
